@@ -1,10 +1,20 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk
 import requests
 from bs4 import BeautifulSoup
+import sqlite3
+from datetime import datetime
+import matplotlib.pyplot as plt
+import pandas as pd
 
 # URL de la page des annonces
 url = 'https://www.free-work.com/fr/tech-it/jobs?query='
+
+# Initialiser la base de données SQLite
+conn = sqlite3.connect('annonces.db')
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS annonces (date TEXT, mot_cle TEXT, nombre INTEGER)''')
+conn.commit()
 
 def scrape_annonces(cible: str, result_label: ttk.Label):
     # Envoyer une requête GET à la page des annonces
@@ -26,6 +36,11 @@ def scrape_annonces(cible: str, result_label: ttk.Label):
         if cible.lower() in texte_annonce:
             compteur += 1
 
+    # Enregistrer les données dans la base de données
+    date_scraping = datetime.now().strftime('%Y-%m-%d')
+    c.execute('INSERT INTO annonces (date, mot_cle, nombre) VALUES (?, ?, ?)', (date_scraping, cible, compteur))
+    conn.commit()
+
     # Afficher le nombre d'annonces trouvées
     result_label.config(text=f"Nombre d'annonces '{cible}' cette semaine: {compteur}")
 
@@ -33,6 +48,21 @@ def scrape_annonces(cible: str, result_label: ttk.Label):
 def start_scraping():
     mot_cle = entry.get()
     scrape_annonces(mot_cle, result_label)
+
+# Fonction pour afficher le graphique
+def afficher_graphique():
+    df = pd.read_sql_query('SELECT date, mot_cle, SUM(nombre) as nombre FROM annonces WHERE mot_cle = "python" GROUP BY date ORDER BY date', conn)
+    df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+    df = df.resample('W').sum()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(df.index, df['nombre'], marker='o')
+    plt.title("Nombre d'annonces 'Python' par semaine")
+    plt.xlabel("Date")
+    plt.ylabel("Nombre d'annonces")
+    plt.grid(True)
+    plt.show()
 
 # Création de la fenêtre principale
 root = tk.Tk()
@@ -55,12 +85,20 @@ button.grid(row=0, column=2, sticky=tk.W)
 result_label = ttk.Label(root, text="", padding="10")
 result_label.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
+# Bouton pour afficher le graphique
+graph_button = ttk.Button(root, text="Afficher le graphique", command=afficher_graphique)
+graph_button.grid(row=2, column=0, sticky=tk.W)
+
 # Configuration de la grille pour redimensionner correctement
 root.columnconfigure(0, weight=1)
 root.rowconfigure(1, weight=1)
 
 # Lancer la boucle principale de l'interface graphique
 root.mainloop()
+
+# Fermer la connexion à la base de données lors de la fermeture du programme
+conn.close()
+
 
 # # Planifier l'exécution du script chaque semaine
 # schedule.every().week.do(scrape_annonces)
