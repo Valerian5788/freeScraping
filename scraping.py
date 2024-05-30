@@ -41,9 +41,8 @@ def scrape_annonces(cible: str, result_label: ttk.Label, page=1):
         for annonce in annonces:
             texte_annonce = annonce.text.lower()
             if cible.lower() in texte_annonce:
-                print(texte_annonce)
                 compteur += 1
-                
+               
                 # Extract the date
                 date_div = annonce.find('div', {'class': 'text-sm whitespace-nowrap'})
                 date = date_div.find('time').text
@@ -94,6 +93,8 @@ def start_scraping():
         return
     scrape_annonces(mot_cle, result_label)
 
+
+
 # Fonction pour afficher le graphique
 def afficher_graphique():
     if not counts_by_week:
@@ -113,7 +114,7 @@ def afficher_graphique():
     plt.xlabel("Date")
     plt.ylabel("Nombre d'annonces")
     plt.grid(True)
-
+    
     # Add interactivity
     cursor = mplcursors.cursor(line, hover=True)
     cursor.connect(
