@@ -2,66 +2,124 @@ import tkinter as tk
 from tkinter import ttk
 import requests
 from bs4 import BeautifulSoup
-import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import pandas as pd
+import matplotlib.dates as mdates
+import mplcursors
+
 
 # URL de la page des annonces
 url = 'https://www.free-work.com/fr/tech-it/jobs?query='
 
-# Initialiser la base de données SQLite
-conn = sqlite3.connect('annonces.db')
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS annonces (date TEXT, mot_cle TEXT, nombre INTEGER)''')
-conn.commit()
+# List to store scraped data
+data = []
+counts_by_week = {}
 
-def scrape_annonces(cible: str, result_label: ttk.Label):
-    # Envoyer une requête GET à la page des annonces
-    response = requests.get(url + cible)
-    if response.status_code != 200:
-        result_label.config(text=f"Échec de la requête: {response.status_code}")
-        return
+compteur = 0  # Initialize compteur outside of the function
+name =""
 
-    # Parser le contenu de la page avec BeautifulSoup
-    soup = BeautifulSoup(response.content, 'html.parser')
+def scrape_annonces(cible: str, result_label: ttk.Label, page=1):
+    global compteur  # Declare compteur as global
+    global counts_by_week  # Declare counts_by_week as global
+    global name
+    name = cible
+    while True:
+        # Envoyer une requête GET à la page des annonces
+        response = requests.get(url + cible + f'&page={page}')
+        if response.status_code != 200:
+            result_label.config(text=f"Échec de la requête: {response.status_code}")
+            return compteur
 
-    # Trouver toutes les annonces
-    annonces = soup.find_all('div', class_='mb-4 relative rounded-lg max-full bg-white flex flex-col cursor-pointer shadow hover:shadow-md')
+        # Parser le contenu de la page avec BeautifulSoup
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-    # Compter le nombre d'annonces contenant le mot-clé
-    compteur = 0
-    for annonce in annonces:
-        texte_annonce = annonce.text.lower()
-        if cible.lower() in texte_annonce:
-            compteur += 1
+        # Trouver toutes les annonces
+        annonces = soup.find_all('div', class_='mb-4 relative rounded-lg max-full bg-white flex flex-col cursor-pointer shadow hover:shadow-md')
 
-    # Enregistrer les données dans la base de données
+        # Compter le nombre d'annonces contenant le mot-clé
+        for annonce in annonces:
+            texte_annonce = annonce.text.lower()
+            if cible.lower() in texte_annonce:
+                print(texte_annonce)
+                compteur += 1
+                
+                # Extract the date
+                date_div = annonce.find('div', {'class': 'text-sm whitespace-nowrap'})
+                date = date_div.find('time').text
+                date = datetime.strptime(date, "%d/%m/%Y")
+
+                # Find the start of the week for this date
+                start_of_week = date - timedelta(days=date.weekday())
+                # Increment the count for this week
+                if start_of_week in counts_by_week:
+                    counts_by_week[start_of_week] += 1
+                else:
+                    counts_by_week[start_of_week] = 1
+
+        # Check if there is a next page
+        # Find all buttons with the class
+        buttons = soup.find_all('button', class_='flex items-center gap-2 h-8 min-w-[2rem] px-3 inline-flex items-center justify-center rounded-md font-semibold text-sm border border-transparent outline-none focus:outline-none transition-all duration-200 text-primary bg-gray-100 hover:bg-gray-200')
+
+        # Identify the next page button by its text
+        next_page_button = None
+        for button in buttons:
+            if button.text.strip() == "Suivant":
+                next_page_button = button
+                break
+
+        # Now you can use next_page_button as before
+        if next_page_button is not None and not next_page_button.has_attr('disabled'):
+        # There is a next page
+            print(f"Scraping page {page + 1}")
+            page += 1
+        else:
+            # There is no next page
+            print("No more pages")
+            break
+
+    # Store the data in a global list
     date_scraping = datetime.now().strftime('%Y-%m-%d')
-    c.execute('INSERT INTO annonces (date, mot_cle, nombre) VALUES (?, ?, ?)', (date_scraping, cible, compteur))
-    conn.commit()
+    data.append({'date': date_scraping, 'mot_cle': cible, 'nombre': compteur})
 
     # Afficher le nombre d'annonces trouvées
-    result_label.config(text=f"Nombre d'annonces '{cible}' cette semaine: {compteur}")
+    result_label.config(text=f"Nombre d'annonces '{cible}' trouvées: {compteur}")
+    return compteur
 
 # Fonction pour démarrer le scraping lorsqu'on clique sur le bouton
 def start_scraping():
     mot_cle = entry.get()
+    if not mot_cle:
+        result_label.config(text="Veuillez entrer un mot-clé.")
+        return
     scrape_annonces(mot_cle, result_label)
 
 # Fonction pour afficher le graphique
 def afficher_graphique():
-    df = pd.read_sql_query('SELECT date, mot_cle, SUM(nombre) as nombre FROM annonces WHERE mot_cle = "python" GROUP BY date ORDER BY date', conn)
-    df['date'] = pd.to_datetime(df['date'])
+    if not counts_by_week:
+        result_label.config(text="Pas de données disponibles pour afficher le graphique.")
+        return
+
+    # Convert the dictionary to a DataFrame
+    df = pd.DataFrame(list(counts_by_week.items()), columns=['date', 'nombre'])
     df.set_index('date', inplace=True)
-    df = df.resample('W').sum()
+    df = df.resample('W').sum()  # Resample by week
 
     plt.figure(figsize=(10, 5))
-    plt.plot(df.index, df['nombre'], marker='o')
-    plt.title("Nombre d'annonces 'Python' par semaine")
+    line, = plt.plot(df.index, df['nombre'], marker='o')  # Save the line object
+    plt.gca().xaxis.set_major_locator(mdates.WeekdayLocator())  # Set major ticks to weekly
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))  # Format date
+    plt.title(f"Nombre d'annonces {name} par semaine")
     plt.xlabel("Date")
     plt.ylabel("Nombre d'annonces")
     plt.grid(True)
+
+    # Add interactivity
+    cursor = mplcursors.cursor(line, hover=True)
+    cursor.connect(
+        "add", lambda sel: sel.annotation.set_text(f"Date: {mdates.num2date(sel.target[0]).strftime('%Y-%m-%d')}\nNombre d'annonces: {sel.target[1]}")
+    )
+
     plt.show()
 
 # Création de la fenêtre principale
@@ -95,17 +153,3 @@ root.rowconfigure(1, weight=1)
 
 # Lancer la boucle principale de l'interface graphique
 root.mainloop()
-
-# Fermer la connexion à la base de données lors de la fermeture du programme
-conn.close()
-
-
-# # Planifier l'exécution du script chaque semaine
-# schedule.every().week.do(scrape_annonces)
-
-# # Lancer une boucle pour exécuter les tâches planifiées
-# while True:
-#     schedule.run_pending()
-#     time.sleep(1)
-    
-    
