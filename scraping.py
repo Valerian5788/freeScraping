@@ -101,7 +101,7 @@ def afficher_graphique():
     plt.xlabel("Date")
     plt.ylabel("Nombre d'annonces")
     plt.grid(True)
-
+    
     # Add interactivity
     cursor = mplcursors.cursor(line, hover=True)
     cursor.connect(
