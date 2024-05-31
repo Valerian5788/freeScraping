@@ -25,68 +25,57 @@ def scrape_annonces(cible: str, result_label: ttk.Label, page=1):
     global name
     name = cible
     while True:
-        # Envoyer une requête GET à la page des annonces
         response = requests.get(url + cible + f'&page={page}')
         if response.status_code != 200:
             result_label.config(text=f"Échec de la requête: {response.status_code}")
             return compteur
 
-        # Parser le contenu de la page avec BeautifulSoup
         soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find the div with the specific class
+        div = soup.find('div', class_='flex flex-wrap justify-between items-stretch gap-1 p-2 rounded-lg bg-white shadow mb-4')
 
-        # Trouver toutes les annonces
+        # Get the value of the 'total-items' attribute
+        compteur = div.get('total-items')
+
         annonces = soup.find_all('div', class_='mb-4 relative rounded-lg max-full bg-white flex flex-col cursor-pointer shadow hover:shadow-md')
 
-        # Compter le nombre d'annonces contenant le mot-clé
         for annonce in annonces:
-            texte_annonce = annonce.text.lower()
-            if cible.lower() in texte_annonce:
-                print(texte_annonce)
-                compteur += 1
-                
-                # Extract the date
-                date_div = annonce.find('div', {'class': 'text-sm whitespace-nowrap'})
-                date = date_div.find('time').text
-                date = datetime.strptime(date, "%d/%m/%Y")
+            date_div = annonce.find('time')
+            date = date_div.text
+            date = datetime.strptime(date, "%d/%m/%Y")
 
-                # Find the start of the week for this date
-                start_of_week = date - timedelta(days=date.weekday())
-                # Increment the count for this week
-                if start_of_week in counts_by_week:
-                    counts_by_week[start_of_week] += 1
-                else:
-                    counts_by_week[start_of_week] = 1
+            # Find the start of the week for this date
+            start_of_week = date - timedelta(days=date.weekday())
+            # Increment the count for this week
+            if start_of_week in counts_by_week:
+                counts_by_week[start_of_week] += 1
+            else:
+                counts_by_week[start_of_week] = 1
 
         # Check if there is a next page
-        # Find all buttons with the class
         buttons = soup.find_all('button', class_='flex items-center gap-2 h-8 min-w-[2rem] px-3 inline-flex items-center justify-center rounded-md font-semibold text-sm border border-transparent outline-none focus:outline-none transition-all duration-200 text-primary bg-gray-100 hover:bg-gray-200')
 
-        # Identify the next page button by its text
         next_page_button = None
         for button in buttons:
             if button.text.strip() == "Suivant":
                 next_page_button = button
                 break
 
-        # Now you can use next_page_button as before
         if next_page_button is not None and not next_page_button.has_attr('disabled'):
-        # There is a next page
-            print(f"Scraping page {page + 1}")
             page += 1
         else:
-            # There is no next page
-            print("No more pages")
             break
 
     # Store the data in a global list
     date_scraping = datetime.now().strftime('%Y-%m-%d')
     data.append({'date': date_scraping, 'mot_cle': cible, 'nombre': compteur})
 
-    # Afficher le nombre d'annonces trouvées
+    # Display the number of found annonces
     result_label.config(text=f"Nombre d'annonces '{cible}' trouvées: {compteur}")
     return compteur
 
-# Fonction pour démarrer le scraping lorsqu'on clique sur le bouton
+# Function to start scraping on button click
 def start_scraping():
     mot_cle = entry.get()
     if not mot_cle:
@@ -94,13 +83,12 @@ def start_scraping():
         return
     scrape_annonces(mot_cle, result_label)
 
-# Fonction pour afficher le graphique
+# Function to display the graph
 def afficher_graphique():
     if not counts_by_week:
         result_label.config(text="Pas de données disponibles pour afficher le graphique.")
         return
 
-    # Convert the dictionary to a DataFrame
     df = pd.DataFrame(list(counts_by_week.items()), columns=['date', 'nombre'])
     df.set_index('date', inplace=True)
     df = df.resample('W').sum()  # Resample by week
@@ -122,34 +110,34 @@ def afficher_graphique():
 
     plt.show()
 
-# Création de la fenêtre principale
+# Create the main window
 root = tk.Tk()
 root.title("Scraping d'annonces")
 
-# Création d'un cadre pour le champ d'entrée et le bouton
+# Create a frame for the input field and button
 frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-# Champ d'entrée pour le mot-clé
+# Input field for the keyword
 ttk.Label(frame, text="Mot-clé:").grid(row=0, column=0, sticky=tk.W)
 entry = ttk.Entry(frame, width=30)
 entry.grid(row=0, column=1, sticky=(tk.W, tk.E))
 
-# Bouton pour lancer le scraping
+# Button to start scraping
 button = ttk.Button(frame, text="Lancer le scraping", command=start_scraping)
 button.grid(row=0, column=2, sticky=tk.W)
 
-# Étiquette pour afficher les résultats
+# Label to display the results
 result_label = ttk.Label(root, text="", padding="10")
 result_label.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-# Bouton pour afficher le graphique
+# Button to display the graph
 graph_button = ttk.Button(root, text="Afficher le graphique", command=afficher_graphique)
 graph_button.grid(row=2, column=0, sticky=tk.W)
 
-# Configuration de la grille pour redimensionner correctement
+# Configure grid for proper resizing
 root.columnconfigure(0, weight=1)
 root.rowconfigure(1, weight=1)
 
-# Lancer la boucle principale de l'interface graphique
+# Start the main loop of the GUI
 root.mainloop()
